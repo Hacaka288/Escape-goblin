@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Escape the Goblin</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+            background: #1a1a2e;
+            touch-action: none;
+        }
+        #info {
+            position: absolute;
+            top: 5px;
+            left: 5px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 8px;
+            z-index: 100;
+            font-size: 12px;
+            max-width: 200px;
+        }
+        @media (min-width: 769px) {
+            #info {
+                top: 10px;
+                left: 10px;
+                padding: 15px;
+                font-size: 14px;
+                max-width: 250px;
+            }
+        }
+        #gameOver {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            background: rgba(0,0,0,0.9);
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            display: none;
+            z-index: 200;
+            max-width: 90%;
+        }
+        #gameOver h1 {
+            margin: 0 0 15px 0;
+            font-size: 24px;
+        }
+        #gameOver p {
+            font-size: 14px;
+        }
+        #gameOver button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        @media (min-width: 769px) {
+            #gameOver {
+                padding: 30px;
+            }
+            #gameOver h1 {
+                margin: 0 0 20px 0;
+                font-size: 32px;
+            }
+            #gameOver p {
+                font-size: 16px;
+            }
+            #gameOver button {
+                padding: 15px 30px;
+                font-size: 18px;
+            }
+        }
+        #gameOver button:hover {
+            background: #45a049;
+        }
+        #joystick {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 100px;
+            height: 100px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50%;
+            border: 3px solid rgba(255,255,255,0.4);
+            display: none;
+            z-index: 100;
+        }
+        #joystick-inner {
+            position: absolute;
+            width: 40px;
+            height: 40px;
+            background: rgba(255,255,255,0.6);
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        @media (min-width: 769px) {
+            #joystick {
+                bottom: 30px;
+                right: 30px;
+                width: 120px;
+                height: 120px;
+            }
+            #joystick-inner {
+                width: 50px;
+                height: 50px;
+            }
+        }
+        @media (max-width: 768px), (pointer: coarse) {
+            #joystick {
+                display: block;
+            }
+        }
+        #difficulty {
+            margin-top: 8px;
+        }
+        #difficulty button {
+            background: #2196F3;
+            color: white;
+            border: none;
+            padding: 6px 8px;
+            margin: 2px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+        }
+        @media (min-width: 769px) {
+            #difficulty {
+                margin-top: 10px;
+            }
+            #difficulty button {
+                padding: 8px 12px;
+                font-size: 12px;
+                border-radius: 5px;
+            }
+        }
+        #difficulty button.active {
+            background: #0b7dda;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <strong>Escape the Goblin!</strong>
+        <div style="margin-top: 10px;">
+            <div>Distance to shore: <span id="distToShore">0</span></div>
+            <div>Goblin distance: <span id="goblinDist">0</span></div>
+        </div>
+        <div id="difficulty">
+            <div style="margin-bottom: 5px;">Goblin Speed:</div>
+            <button onclick="setDifficulty(4)" class="active" id="btn4">4x (Original)</button>
+            <button onclick="setDifficulty(5)" id="btn5">5x</button>
+            <button onclick="setDifficulty(6)" id="btn6">6x</button>
+        </div>
+        <div style="margin-top: 10px; font-size: 12px;">
+            Desktop: WASD/Arrows<br>
+            Mobile: Use joystick
+        </div>
+    </div>
+
+    <div id="gameOver">
+        <h1 id="gameOverTitle">You Escaped!</h1>
+        <p id="gameOverMessage">You made it to safety!</p>
+        <button onclick="resetGame()">Play Again</button>
+    </div>
+
+    <div id="joystick">
+        <div id="joystick-inner"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        let scene, camera, renderer;
+        let player, goblin, lake, shore;
+        let playerSpeed = 0.05;
+        let goblinSpeedMultiplier = 4;
+        let lakeRadius = 10;
+        let gameActive = true;
+        
+        // Input handling
+        let keys = {};
+        let joystickActive = false;
+        let joystickDelta = {x: 0, y: 0};
+
+        function init() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87ceeb);
+            scene.fog = new THREE.Fog(0x87ceeb, 20, 50);
+
+            // Adjust camera based on screen size
+            const isMobile = window.innerWidth <= 768;
+            const cameraHeight = isMobile ? 35 : 25;
+            const fov = isMobile ? 75 : 60;
+            
+            camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, cameraHeight, 0);
+            camera.lookAt(0, 0, 0);
+
+            renderer = new THREE.WebGLRenderer({antialias: true});
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            document.body.appendChild(renderer.domElement);
+
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const sunLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            sunLight.position.set(10, 20, 5);
+            sunLight.castShadow = true;
+            sunLight.shadow.camera.left = -30;
+            sunLight.shadow.camera.right = 30;
+            sunLight.shadow.camera.top = 30;
+            sunLight.shadow.camera.bottom = -30;
+            scene.add(sunLight);
+
+            // Lake (water)
+            const lakeGeometry = new THREE.CircleGeometry(lakeRadius, 64);
+            const lakeMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1e90ff,
+                transparent: true,
+                opacity: 0.7,
+                side: THREE.DoubleSide
+            });
+            lake = new THREE.Mesh(lakeGeometry, lakeMaterial);
+            lake.rotation.x = -Math.PI / 2;
+            lake.receiveShadow = true;
+            scene.add(lake);
+
+            // Shore (land around lake)
+            const shoreGeometry = new THREE.RingGeometry(lakeRadius, lakeRadius + 3, 64);
+            const shoreMaterial = new THREE.MeshStandardMaterial({
+                color: 0x8b7355,
+                side: THREE.DoubleSide
+            });
+            shore = new THREE.Mesh(shoreGeometry, shoreMaterial);
+            shore.rotation.x = -Math.PI / 2;
+            shore.receiveShadow = true;
+            scene.add(shore);
+
+            // Forest edge
+            const forestGeometry = new THREE.RingGeometry(lakeRadius + 3, lakeRadius + 5, 64);
+            const forestMaterial = new THREE.MeshStandardMaterial({
+                color: 0x228b22,
+                side: THREE.DoubleSide
+            });
+            const forest = new THREE.Mesh(forestGeometry, forestMaterial);
+            forest.rotation.x = -Math.PI / 2;
+            scene.add(forest);
+
+            // Player (human)
+            const playerGeometry = new THREE.CylinderGeometry(0.3, 0.3, 1, 16);
+            const playerMaterial = new THREE.MeshStandardMaterial({color: 0x4169e1});
+            player = new THREE.Mesh(playerGeometry, playerMaterial);
+            player.position.set(0, 0.5, 0);
+            player.castShadow = true;
+            scene.add(player);
+
+            // Player head
+            const headGeometry = new THREE.SphereGeometry(0.25, 16, 16);
+            const headMaterial = new THREE.MeshStandardMaterial({color: 0xffdbac});
+            const head = new THREE.Mesh(headGeometry, headMaterial);
+            head.position.y = 0.75;
+            player.add(head);
+
+            // Goblin
+            const goblinGeometry = new THREE.CylinderGeometry(0.4, 0.4, 1.2, 16);
+            const goblinMaterial = new THREE.MeshStandardMaterial({color: 0x228b22});
+            goblin = new THREE.Mesh(goblinGeometry, goblinMaterial);
+            goblin.position.set(lakeRadius, 0.6, 0);
+            goblin.castShadow = true;
+            scene.add(goblin);
+
+            // Goblin head
+            const goblinHeadGeometry = new THREE.SphereGeometry(0.35, 16, 16);
+            const goblinHeadMaterial = new THREE.MeshStandardMaterial({color: 0x3cb371});
+            const goblinHead = new THREE.Mesh(goblinHeadGeometry, goblinHeadMaterial);
+            goblinHead.position.y = 0.85;
+            goblin.add(goblinHead);
+
+            // Input handlers
+            document.addEventListener('keydown', (e) => keys[e.key.toLowerCase()] = true);
+            document.addEventListener('keyup', (e) => keys[e.key.toLowerCase()] = false);
+
+            // Joystick handlers
+            const joystick = document.getElementById('joystick');
+            const joystickInner = document.getElementById('joystick-inner');
+            
+            joystick.addEventListener('touchstart', handleJoystickStart);
+            joystick.addEventListener('touchmove', handleJoystickMove);
+            joystick.addEventListener('touchend', handleJoystickEnd);
+
+            window.addEventListener('resize', onWindowResize);
+
+            animate();
+        }
+
+        function handleJoystickStart(e) {
+            e.preventDefault();
+            joystickActive = true;
+        }
+
+        function handleJoystickMove(e) {
+            if (!joystickActive) return;
+            e.preventDefault();
+            
+            const joystick = document.getElementById('joystick');
+            const rect = joystick.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+            
+            const touch = e.touches[0];
+            const deltaX = touch.clientX - centerX;
+            const deltaY = touch.clientY - centerY;
+            
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+            const maxDistance = rect.width / 2 - 10;
+            
+            if (distance > maxDistance) {
+                joystickDelta.x = (deltaX / distance) * maxDistance;
+                joystickDelta.y = (deltaY / distance) * maxDistance;
+            } else {
+                joystickDelta.x = deltaX;
+                joystickDelta.y = deltaY;
+            }
+            
+            const joystickInner = document.getElementById('joystick-inner');
+            joystickInner.style.transform = `translate(calc(-50% + ${joystickDelta.x}px), calc(-50% + ${joystickDelta.y}px))`;
+        }
+
+        function handleJoystickEnd(e) {
+            e.preventDefault();
+            joystickActive = false;
+            joystickDelta = {x: 0, y: 0};
+            const joystickInner = document.getElementById('joystick-inner');
+            joystickInner.style.transform = 'translate(-50%, -50%)';
+        }
+
+        function movePlayer() {
+            if (!gameActive) return;
+
+            let moveX = 0;
+            let moveZ = 0;
+
+            // Keyboard input
+            if (keys['w'] || keys['arrowup']) moveZ -= 1;
+            if (keys['s'] || keys['arrowdown']) moveZ += 1;
+            if (keys['a'] || keys['arrowleft']) moveX -= 1;
+            if (keys['d'] || keys['arrowright']) moveX += 1;
+
+            // Joystick input
+            if (joystickActive) {
+                const normalizedFactor = window.innerWidth <= 768 ? 30 : 35;
+                moveX += joystickDelta.x / normalizedFactor;
+                moveZ += joystickDelta.y / normalizedFactor;
+            }
+
+            if (moveX !== 0 || moveZ !== 0) {
+                const magnitude = Math.sqrt(moveX * moveX + moveZ * moveZ);
+                moveX /= magnitude;
+                moveZ /= magnitude;
+
+                player.position.x += moveX * playerSpeed;
+                player.position.z += moveZ * playerSpeed;
+
+                // Keep player in lake until they reach shore
+                const distFromCenter = Math.sqrt(player.position.x ** 2 + player.position.z ** 2);
+                if (distFromCenter > lakeRadius) {
+                    // Check if player escaped
+                    checkEscape();
+                }
+            }
+        }
+
+        function moveGoblin() {
+            if (!gameActive) return;
+
+            // Player's target angle
+            const playerAngle = Math.atan2(player.position.z, player.position.x);
+
+            // Goblin's current angle
+            const goblinAngle = Math.atan2(goblin.position.z, goblin.position.x);
+
+            // Shortest angular difference (normalized to [-π, π])
+            let deltaAngle = playerAngle - goblinAngle;
+            
+            // Normalize to ensure shortest path
+            while (deltaAngle > Math.PI) deltaAngle -= 2 * Math.PI;
+            while (deltaAngle < -Math.PI) deltaAngle += 2 * Math.PI;
+
+            // Tangential angular speed (radians per frame)
+            const goblinSpeed = playerSpeed * goblinSpeedMultiplier;
+            const angularSpeed = goblinSpeed / lakeRadius;
+
+            // Angular movement this frame (toward target, no overshoot)
+            const moveAngle = Math.min(angularSpeed, Math.abs(deltaAngle));
+            const direction = Math.sign(deltaAngle);
+            const newGoblinAngle = goblinAngle + (direction * moveAngle);
+
+            // Set exact position on shore (preserves y)
+            goblin.position.x = Math.cos(newGoblinAngle) * lakeRadius;
+            goblin.position.z = Math.sin(newGoblinAngle) * lakeRadius;
+        }
+
+        function checkEscape() {
+            const distFromCenter = Math.sqrt(player.position.x ** 2 + player.position.z ** 2);
+            const goblinToPlayer = Math.sqrt(
+                (player.position.x - goblin.position.x) ** 2 +
+                (player.position.z - goblin.position.z) ** 2
+            );
+
+            if (distFromCenter >= lakeRadius && goblinToPlayer < 1) {
+                endGame(false);
+            } else if (distFromCenter >= lakeRadius + 2.5) {
+                endGame(true);
+            }
+        }
+
+        function endGame(escaped) {
+            gameActive = false;
+            const gameOverDiv = document.getElementById('gameOver');
+            const title = document.getElementById('gameOverTitle');
+            const message = document.getElementById('gameOverMessage');
+
+            if (escaped) {
+                title.textContent = 'You Escaped!';
+                title.style.color = '#4CAF50';
+                message.textContent = 'You made it to the forest and got away from the goblin!';
+            } else {
+                title.textContent = 'Caught!';
+                title.style.color = '#f44336';
+                message.textContent = 'The goblin caught you at the shore. Try a different strategy!';
+            }
+
+            gameOverDiv.style.display = 'block';
+        }
+
+        function resetGame() {
+            player.position.set(0, 0.5, 0);
+            goblin.position.set(lakeRadius, 0.6, 0);
+            gameActive = true;
+            document.getElementById('gameOver').style.display = 'none';
+        }
+
+        function setDifficulty(speed) {
+            goblinSpeedMultiplier = speed;
+            document.querySelectorAll('#difficulty button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            const btn = document.getElementById('btn' + speed);
+            if (btn) btn.classList.add('active');
+            resetGame();
+        }
+
+        function updateInfo() {
+            const distToShore = Math.max(0, lakeRadius - Math.sqrt(player.position.x ** 2 + player.position.z ** 2));
+            const goblinDist = Math.sqrt(
+                (player.position.x - goblin.position.x) ** 2 +
+                (player.position.z - goblin.position.z) ** 2
+            );
+
+            document.getElementById('distToShore').textContent = distToShore.toFixed(2);
+            document.getElementById('goblinDist').textContent = goblinDist.toFixed(2);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            movePlayer();
+            moveGoblin();
+            updateInfo();
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            const isMobile = window.innerWidth <= 768;
+            const cameraHeight = isMobile ? 35 : 25;
+            const fov = isMobile ? 75 : 60;
+            
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.fov = fov;
+            camera.position.y = cameraHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        init();
+    </script>
+</body>
+</html>
